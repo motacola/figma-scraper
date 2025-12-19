@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const chalk = require('chalk');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
@@ -27,18 +27,60 @@ const WAIT_TIME = argv.wait;
  */
 function isBlank(buffer) {
     if (!buffer || buffer.length < 5000) return true;
-    
-    // Check points in the buffer (start, middle, end)
-    const samples = [
-        buffer[Math.floor(buffer.length * 0.25)],
-        buffer[Math.floor(buffer.length * 0.5)],
-        buffer[Math.floor(buffer.length * 0.75)],
-        buffer[buffer.length - 1]
-    ];
-    
+
+    // Check multiple points across the buffer (20 samples)
+    const samples = [];
+    for (let i = 1; i <= 20; i++) {
+        samples.push(buffer[Math.floor(buffer.length * (i / 21))]);
+    }
+
     // If all sample bytes are identical, it's very likely a solid color
     const isSolid = samples.every(s => s === samples[0]);
     return isSolid;
+}
+
+/**
+ * Monitors the page until the visual content has "settled" (no changes for a period).
+ */
+async function waitForVisualStability(page, { minWaitMs = 500, maxWaitMs = 5000, stabilityChecks = 3 } = {}) {
+    let previousBuffer = null;
+    let stableCount = 0;
+    const start = Date.now();
+
+    if (minWaitMs > 0) await page.waitForTimeout(minWaitMs);
+
+    while (Date.now() - start < maxWaitMs) {
+        const currentBuffer = await page.screenshot({ fullPage: false });
+
+        if (previousBuffer && currentBuffer.equals(previousBuffer)) {
+            stableCount++;
+            if (stableCount >= stabilityChecks) {
+                return currentBuffer;
+            }
+        } else {
+            stableCount = 0;
+        }
+
+        previousBuffer = currentBuffer;
+        await page.waitForTimeout(200);
+    }
+
+    return previousBuffer || await page.screenshot({ fullPage: false });
+}
+
+/**
+ * Extracts the current frame name from the page title.
+ */
+async function getFrameInfo(page) {
+    try {
+        const title = await page.title();
+        const parts = title.split(' – ');
+        const frameName = parts.length > 1 ? parts[0].trim() : 'Unknown Frame';
+        const safeName = frameName.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_');
+        return { name: frameName, safeName };
+    } catch (e) {
+        return { name: 'Slide', safeName: 'Slide' };
+    }
 }
 
 async function run() {
@@ -47,7 +89,7 @@ async function run() {
         process.exit(1);
     }
 
-    const figmaRegex = /^https?:\/\/(www\.)?figma\.com\/(proto|file)\/[\w\-]+/;
+    const figmaRegex = /^https?:\/\/(www\.)?figma\.com\/(proto|file|design)\/[\w\-]+/;
     if (!figmaRegex.test(FIGMA_URL)) {
         console.error(chalk.red('Error: Invalid Figma URL format.'));
         process.exit(1);
@@ -130,9 +172,17 @@ async function run() {
 
         for (let i = 1; i <= MAX_SLIDES; i++) {
             console.log(chalk.green(`   Processing slide ${i}...`));
-            const buffer = await page.screenshot({ fullPage: false });
 
-            if (previousBuffer && buffer.compare(previousBuffer) === 0) {
+            // Enhanced Timing: Wait for animation to settle
+            const buffer = await waitForVisualStability(page, {
+                minWaitMs: i === 1 ? 5000 : 500,
+                maxWaitMs: WAIT_TIME > 5000 ? WAIT_TIME : 5000,
+                stabilityChecks: 3
+            });
+
+            const frameInfo = await getFrameInfo(page);
+
+            if (previousBuffer && buffer.equals(previousBuffer)) {
                 consecutiveDuplicates++;
                 if (consecutiveDuplicates >= 3) {
                     console.log(chalk.blue('   🏁 Visual end detected.'));
@@ -140,7 +190,7 @@ async function run() {
                 }
             } else {
                 // Bugfix: Support 100+ slides
-                const filename = `Slide_${String(slideCount).padStart(3, '0')}.png`;
+                const filename = `Slide_${String(slideCount).padStart(3, '0')}_${frameInfo.safeName}.png`;
                 try {
                     fs.writeFileSync(path.join(DOWNLOADS_DIR, filename), buffer);
                 } catch (writeError) {
@@ -152,18 +202,29 @@ async function run() {
                     const image = await pdfDoc.embedPng(buffer);
                     const pdfPage = pdfDoc.addPage([image.width, image.height]);
                     pdfPage.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
-                    slideCount++;
+
+                    // Add frame name to PDF
+                    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+                    pdfPage.drawText(frameInfo.name, {
+                        x: 20,
+                        y: 20,
+                        size: 10,
+                        font: font,
+                        color: rgb(0.5, 0.5, 0.5)
+                    });
                 } catch (e) {
-                    console.log(chalk.red(`   ⚠️ Failed to embed slide ${i} into PDF.`));
+                    console.log(chalk.red(`   ⚠️ Failed to embed slide ${i} into PDF: ${e.message}`));
                 }
 
+
+                slideCount++;
                 consecutiveDuplicates = 0;
                 previousBuffer = buffer;
             }
 
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(1500);
-            
+
             if (consecutiveDuplicates > 0) {
                 await page.keyboard.press('Space');
                 await page.waitForTimeout(1000);

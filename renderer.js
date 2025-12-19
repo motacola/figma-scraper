@@ -12,6 +12,7 @@ const outputPathInput = document.getElementById('output-path');
 const maxSlidesInput = document.getElementById('max-slides');
 const waitMsInput = document.getElementById('wait-ms');
 const exportPresetSelect = document.getElementById('export-preset');
+const redactionModeToggle = document.getElementById('redaction-mode');
 
 // Buttons
 const validateLicenseBtn = document.getElementById('validate-license-btn');
@@ -139,15 +140,33 @@ discoverBtn.onclick = async () => {
 startBtn.onclick = () => {
     const selectedFlows = Array.from(flowsList.querySelectorAll('input:checked')).map(cb => cb.value);
     
+    const maxSlides = parseInt(maxSlidesInput.value);
+    const waitMs = parseInt(waitMsInput.value);
+    const browserPath = document.getElementById('browser-path').value.trim();
+
+    if (isNaN(maxSlides) || maxSlides <= 0) {
+        alert('Please enter a valid positive number for Maximum Slides.');
+        return;
+    }
+    if (isNaN(waitMs) || waitMs < 500) {
+        alert('Please enter a wait time of at least 500ms.');
+        return;
+    }
+    if (!browserPath) {
+        alert('Please select or auto-detect a browser path (Chrome/Edge/Brave).');
+        return;
+    }
+
     const config = {
         url: figmaUrlInput.value.trim(),
         password: figmaPasswordInput.value,
         outputDir: outputPathInput.value,
-        maxSlides: parseInt(maxSlidesInput.value) || 200,
-        waitMs: parseInt(waitMsInput.value) || 5000,
-        browserPath: document.getElementById('browser-path').value,
+        maxSlides: maxSlides,
+        waitMs: waitMs,
+        browserPath: browserPath,
         flowNodeIds: selectedFlows.length > 0 ? selectedFlows : [null],
-        preset: exportPresetSelect.value
+        preset: exportPresetSelect.value,
+        redacted: redactionModeToggle.checked
     };
 
     if (!config.url || !config.outputDir) {

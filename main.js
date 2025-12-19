@@ -37,15 +37,19 @@ ipcMain.on('start-capture', async (event, config) => {
     
     if (chromePath) {
         const lowerPath = chromePath.toLowerCase();
-        const isSafari = lowerPath.includes('safari.app') ||
-                         lowerPath.includes('/safari') ||
-                         lowerPath.includes('com.apple.safari') ||
-                         lowerPath.includes('safari.exe');
+        const isUnsupported = lowerPath.includes('safari.app') ||
+                              lowerPath.includes('/safari') ||
+                              lowerPath.includes('com.apple.safari') ||
+                              lowerPath.includes('firefox.app') ||
+                              lowerPath.includes('/firefox') ||
+                              lowerPath.includes('safari.exe') ||
+                              lowerPath.includes('firefox.exe');
         
-        if (isSafari) {
+        if (isUnsupported) {
+            const browserName = lowerPath.includes('safari') ? 'Safari' : 'Firefox';
             event.reply('status-update', {
                 type: 'error',
-                message: 'Safari is not supported (Playwright Chromium only). Please use Chrome, Edge, Brave, or Arc.'
+                message: `${browserName} is not supported (Playwright Chromium only). Please use Chrome, Edge, Brave, or Arc.`
             });
             return;
         }
