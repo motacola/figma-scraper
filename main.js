@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { findChrome } = require('./chrome-finder');
 const { validateLicense } = require('./license');
-const { runScrape, discoverFlows, runGuidedFlow } = require('./scraper-core');
+const { runScrape, discoverFlows, runGuidedFlow, ExportManager } = require('./scraper-core');
 
 let mainWindow;
 
@@ -238,6 +238,62 @@ ipcMain.handle('delete-flow', async (event, flowName) => {
         const flowManager = new FlowManager();
         const deleted = flowManager.deleteFlow(flowName);
         return { success: deleted };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Export Manager IPC Handlers
+ipcMain.handle('get-export-presets', async () => {
+    try {
+        const exportManager = new ExportManager();
+        const presets = exportManager.getPresetNames().map(name => {
+            const preset = exportManager.getPreset(name);
+            return {
+                name: preset.name,
+                description: preset.description
+            };
+        });
+        return { success: true, presets };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('get-export-preset-details', async (event, presetName) => {
+    try {
+        const exportManager = new ExportManager();
+        const preset = exportManager.getPreset(presetName);
+        return { success: true, preset };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('create-custom-preset', async (event, { presetName, options }) => {
+    try {
+        const exportManager = new ExportManager();
+        const preset = exportManager.createCustomPreset(presetName, options);
+        exportManager.saveCustomPreset(presetName);
+        return { success: true, preset };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('load-custom-presets', async () => {
+    try {
+        const exportManager = new ExportManager();
+        const loadedCount = exportManager.loadCustomPresets();
+        const presets = exportManager.getPresetNames().map(name => {
+            const preset = exportManager.getPreset(name);
+            return {
+                name: preset.name,
+                description: preset.description,
+                isCustom: true
+            };
+        });
+        return { success: true, presets, loadedCount };
     } catch (error) {
         return { success: false, error: error.message };
     }

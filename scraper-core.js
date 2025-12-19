@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const FlowManager = require('./flow-manager');
+const ExportManager = require('./export-manager');
 
 /**
  * Simple "Computer Vision" check to see if a screenshot is "blank" (solid color).
@@ -405,6 +406,7 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
         throw mkdirError;
     }
 
+    const exportManager = new ExportManager();
     const pdfDoc = await PDFDocument.create();
 
     let browser = null;
@@ -566,15 +568,9 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
                     const pdfPage = pdfDoc.addPage([image.width, image.height]);
                     pdfPage.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
 
+                    // Add frame name using export manager
                     if (isStakeholder) {
-                        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-                        pdfPage.drawText(frameInfo.name, {
-                            x: 20,
-                            y: 20,
-                            size: 10,
-                            font: font,
-                            color: rgb(0.5, 0.5, 0.5)
-                        });
+                        await exportManager.addFrameName(pdfDoc, pdfPage, frameInfo.name, exportManager.getPreset(preset));
                     }
                 } catch (embedError) {
                     onStatus({ type: 'warning', message: `Could not embed slide ${slideCount} into PDF: ${embedError.message}` });
@@ -640,4 +636,4 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
     }
 }
 
-module.exports = { runScrape, discoverFlows, runGuidedFlow, FlowManager };
+module.exports = { runScrape, discoverFlows, runGuidedFlow, FlowManager, ExportManager };
