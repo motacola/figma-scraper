@@ -1,8 +1,6 @@
-# FigmaSnap
+# FigmaSnap Product Guide v1.0.0
 
-**Capture Figma prototypes in seconds - no subscriptions, pay once, use forever.**
-
-FigmaSnap is a powerful desktop utility that automates the process of capturing full-page screenshots and generating PDFs from Figma prototypes. It handles password protection, anti-bot detection, and long vertical content automatically.
+Thank you for purchasing **FigmaSnap**! Your $8.99 investment will save you hours of manual work.
 
 ## Getting Started
 
@@ -27,5 +25,10 @@ FigmaSnap is a powerful desktop utility that automates the process of capturing 
 * Canvas not detected: Some complex prototypes load slowly. FigmaSnap will wait up to 60 seconds before defaulting to manual mode.
 * Permission Denied: On Mac/Windows, you may need to "Allow" the app to run as it is currently unsigned for the $8.99 price point.
 
+## License Information
+
+*   **One Key, One Computer**: Your license is locked to your hardware ID.
+*   **Lifetime Access**: Pay once, use forever. No subscriptions.
+
 ---
-*Saves you 2 hours every week. Pay once, use forever.*
+*FigmaSnap - The $9 tool that saves you 2 hours every week.*

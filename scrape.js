@@ -1,159 +1,195 @@
-require('dotenv').config();
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const { promisify } = require('util');
 const { PDFDocument } = require('pdf-lib');
+const chalk = require('chalk');
+const yargs = require('yargs/yargs');
+const { hideBin } = require('yargs/helpers');
+const { findChrome } = require('./chrome-finder');
+require('dotenv').config();
 
-puppeteer.use(StealthPlugin());
+const argv = yargs(hideBin(process.argv))
+    .option('url', { type: 'string', description: 'Figma URL' })
+    .option('output', { type: 'string', description: 'Output directory' })
+    .option('password', { type: 'string', description: 'Figma password' })
+    .option('max-slides', { type: 'number', default: 200, description: 'Max slides to capture' })
+    .option('wait', { type: 'number', default: 5000, description: 'Wait time per slide (ms)' })
+    .argv;
 
-const mkdir = promisify(fs.mkdir);
+const FIGMA_URL = argv.url || process.env.FIGMA_URL;
+const PASSWORD = argv.password || process.env.FIGMA_PASSWORD;
+const DOWNLOADS_DIR = path.resolve(argv.output || process.env.OUTPUT_DIR || 'downloads');
+const MAX_SLIDES = argv['max-slides'];
+const WAIT_TIME = argv.wait;
 
-// Configuration from Env
-const FIGMA_URL = process.env.FIGMA_URL;
-const PASSWORD = process.env.FIGMA_PASSWORD;
-
-// Resolve output dir
-let DOWNLOADS_DIR = process.env.OUTPUT_DIR || path.join(os.homedir(), 'Downloads', 'Boho_Beautiful_Screenshots');
-if (!path.isAbsolute(DOWNLOADS_DIR)) {
-    if (DOWNLOADS_DIR.toLowerCase().startsWith('downloads/')) {
-        DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads', DOWNLOADS_DIR.substring(10));
-    } else {
-        DOWNLOADS_DIR = path.resolve(process.cwd(), DOWNLOADS_DIR);
-    }
+/**
+ * Pixel-sensing to detect blank screens
+ */
+function isBlank(buffer) {
+    if (!buffer || buffer.length < 5000) return true;
+    
+    // Check points in the buffer (start, middle, end)
+    const samples = [
+        buffer[Math.floor(buffer.length * 0.25)],
+        buffer[Math.floor(buffer.length * 0.5)],
+        buffer[Math.floor(buffer.length * 0.75)],
+        buffer[buffer.length - 1]
+    ];
+    
+    // If all sample bytes are identical, it's very likely a solid color
+    const isSolid = samples.every(s => s === samples[0]);
+    return isSolid;
 }
-
-const MAX_SLIDES = 200; 
-const TRANSITION_WAIT_MS = 5000; 
 
 async function run() {
     if (!FIGMA_URL) {
-        console.error('Error: FIGMA_URL is not set in .env file');
+        console.error(chalk.red('Error: FIGMA_URL is not defined.'));
         process.exit(1);
     }
 
-    console.log(`Output Directory: ${DOWNLOADS_DIR}`);
-    if (!fs.existsSync(DOWNLOADS_DIR)) {
-        await mkdir(DOWNLOADS_DIR, { recursive: true });
+    const figmaRegex = /^https?:\/\/(www\.)?figma\.com\/(proto|file)\/[\w\-]+/;
+    if (!figmaRegex.test(FIGMA_URL)) {
+        console.error(chalk.red('Error: Invalid Figma URL format.'));
+        process.exit(1);
     }
 
-    // Initialize PDF Document
-    const pdfDoc = await PDFDocument.create();
+    console.log(chalk.blue(`🚀 [FigmaSnap CLI] Hardened Playwright Engine Starting...`));
+    try {
+        if (!fs.existsSync(DOWNLOADS_DIR)) {
+            fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+        }
+    } catch (mkdirError) {
+        console.error(chalk.red(`Failed to create output directory: ${mkdirError.message}`));
+        process.exit(1);
+    }
 
-    // Launch headful with system Chrome
-    const browser = await puppeteer.launch({
+    const pdfDoc = await PDFDocument.create();
+    const chromePath = findChrome();
+
+    const browser = await chromium.launch({
         headless: false,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 
-        userDataDir: path.join(__dirname, 'chrome_profile'), 
-        defaultViewport: { width: 1600, height: 5000 }, 
-        ignoreDefaultArgs: ['--disable-extensions'],
+        executablePath: chromePath || undefined,
+        ignoreDefaultArgs: ['--enable-automation'],
         args: [
             '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--enable-gpu',
-            '--ignore-gpu-blocklist',
-            '--enable-webgl',
-            '--enable-webgl-draft-extensions',
             '--start-maximized',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-infobars'
+            '--disable-blink-features=AutomationControlled'
         ]
     });
-    
-    // get first page
-    const pages = await browser.pages();
-    let page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setViewport({ width: 1600, height: 5000 });
 
-    console.log(`Navigating to Figma...`);
-    await page.goto(FIGMA_URL, { waitUntil: 'domcontentloaded', timeout: 0 }); 
+    const context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        deviceScaleFactor: 2,
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    });
+    const page = await context.newPage();
 
-    // === MANUAL INTERVENTION BLOCK ===
-    console.log('\n\n=============================================================');
-    console.log('  WAITING 60 SECONDS FOR MANUAL USER SETUP');
-    console.log('=============================================================');
-    console.log(`1. Log in if needed (Pass: ${PASSWORD || 'Not Set'}).`);
-    console.log('2. Ensure prototype is loaded.');
-    console.log('3. Adjust zoom/fit if needed.');
-    console.log('4. CLICK on the canvas.');
-    console.log('-------------------------------------------------------------');
-    console.log('Script will resume automatically in 60 seconds...');
-    console.log('=============================================================\n');
+    try {
+        console.log(chalk.cyan(`🌐 Navigating: ${FIGMA_URL}`));
+        await page.goto(FIGMA_URL, { waitUntil: 'load', timeout: 0 });
+        await page.waitForLoadState('networkidle').catch(() => null);
 
-    await new Promise(r => setTimeout(r, 60000));
-
-    console.log('Resuming automation...');
-    // Refresh page focus
-    const allPages = await browser.pages();
-    let targetPage = page;
-    for (const p of allPages) {
-        if (p.url().includes('figma.com')) targetPage = p;
-    }
-    page = targetPage;
-    await page.bringToFront();
-    
-    // Attempt focus click
-    await page.mouse.click(800, 2500); 
-
-    let previousBuffer = null;
-    let consecutiveDuplicates = 0;
-    let slideCount = 1;
-
-    for (let i = 1; i <= MAX_SLIDES; i++) {
-        console.log(`Processing slide ${i}...`);
-        
-        // Screenshot
-        const buffer = await page.screenshot({ fullPage: false });
-        
-        if (previousBuffer && buffer.equals(previousBuffer)) {
-            console.log('Duplicate detected.');
-            consecutiveDuplicates++;
-            if (consecutiveDuplicates >= 3) {
-                 console.log('Stopping after 3 consecutive duplicates.');
-                 break;
+        // Password detection
+        try {
+            const passwordInput = 'input[type="password"]';
+            const present = await page.waitForSelector(passwordInput, { timeout: 8000 }).catch(() => null);
+            if (present && PASSWORD) {
+                console.log(chalk.yellow('🔑 Entering password...'));
+                await page.fill(passwordInput, PASSWORD);
+                await page.keyboard.press('Enter');
+                await page.waitForLoadState('networkidle').catch(() => null);
+                await page.waitForTimeout(5000);
             }
+        } catch (e) {
+            console.error('Password handling error:', e);
+        }
+
+        console.log(chalk.yellow('📸 Vision sensing WebGL content...'));
+        try {
+            await page.waitForSelector('canvas', { state: 'visible', timeout: 60000 });
+            let senseCount = 0;
+            while (senseCount < 5) {
+                const check = await page.screenshot();
+                if (!isBlank(check)) break;
+                console.log(chalk.gray(`   Waiting for visual pixels... (${senseCount + 1}/5)`));
+                await page.waitForTimeout(3000);
+                senseCount++;
+            }
+            await page.waitForTimeout(5000);
+        } catch (e) {
+            console.log(chalk.magenta('⚠️ Vision sensing timed out. Capturing anyway...'));
+            await page.waitForTimeout(5000);
+        }
+
+        await page.bringToFront();
+        await page.mouse.click(640, 400);
+
+        let previousBuffer = null;
+        let consecutiveDuplicates = 0;
+        let slideCount = 1;
+
+        for (let i = 1; i <= MAX_SLIDES; i++) {
+            console.log(chalk.green(`   Processing slide ${i}...`));
+            const buffer = await page.screenshot({ fullPage: false });
+
+            if (previousBuffer && buffer.compare(previousBuffer) === 0) {
+                consecutiveDuplicates++;
+                if (consecutiveDuplicates >= 3) {
+                    console.log(chalk.blue('   🏁 Visual end detected.'));
+                    break;
+                }
+            } else {
+                // Bugfix: Support 100+ slides
+                const filename = `Slide_${String(slideCount).padStart(3, '0')}.png`;
+                try {
+                    fs.writeFileSync(path.join(DOWNLOADS_DIR, filename), buffer);
+                } catch (writeError) {
+                    console.error(chalk.red(`Failed to save slide ${slideCount}: ${writeError.message}`));
+                    throw writeError;
+                }
+
+                try {
+                    const image = await pdfDoc.embedPng(buffer);
+                    const pdfPage = pdfDoc.addPage([image.width, image.height]);
+                    pdfPage.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+                    slideCount++;
+                } catch (e) {
+                    console.log(chalk.red(`   ⚠️ Failed to embed slide ${i} into PDF.`));
+                }
+
+                consecutiveDuplicates = 0;
+                previousBuffer = buffer;
+            }
+
+            await page.keyboard.press('ArrowRight');
+            await page.waitForTimeout(1500);
+            
+            if (consecutiveDuplicates > 0) {
+                await page.keyboard.press('Space');
+                await page.waitForTimeout(1000);
+            }
+            await page.waitForTimeout(WAIT_TIME);
+        }
+
+        if (slideCount > 1) {
+            console.log(chalk.cyan(`📄 Compiling final PDF...`));
+            const pdfBytes = await pdfDoc.save();
+            try {
+                fs.writeFileSync(path.join(DOWNLOADS_DIR, 'Presentation.pdf'), pdfBytes);
+            } catch (writeError) {
+                console.error(chalk.red(`Failed to save PDF: ${writeError.message}`));
+                throw writeError;
+            }
+            console.log(chalk.green.bold(`✨ Success! Saved ${slideCount - 1} slides to ${DOWNLOADS_DIR}`));
         } else {
-            console.log(`New slide detected! Saving image and adding to PDF...`);
-            
-            // Save PNG
-            const filename = `slide_${String(slideCount).padStart(2, '0')}.png`;
-            fs.writeFileSync(path.join(DOWNLOADS_DIR, filename), buffer);
-            
-            // Add to PDF
-            const image = await pdfDoc.embedPng(buffer);
-            const page = pdfDoc.addPage([image.width, image.height]);
-            page.drawImage(image, {
-                x: 0,
-                y: 0,
-                width: image.width,
-                height: image.height,
-            });
-
-            slideCount++;
-            consecutiveDuplicates = 0;
-            previousBuffer = buffer; 
+            console.log(chalk.red('\n❌ Failure: No slides were captured.'));
         }
 
-        console.log('Navigating...');
-        await page.keyboard.press('ArrowRight');
-        await new Promise(r => setTimeout(r, 500));
-        
-        if (consecutiveDuplicates > 0) {
-             await page.keyboard.press('Space');
-             await new Promise(r => setTimeout(r, 500));
-        }
-
-        await new Promise(r => setTimeout(r, TRANSITION_WAIT_MS));
+    } catch (error) {
+        console.error(chalk.red('\n💥 Error:'), error);
+    } finally {
+        await browser.close().catch(() => null);
     }
-
-    console.log(`Saving Presentation.pdf to ${DOWNLOADS_DIR}...`);
-    const pdfBytes = await pdfDoc.save();
-    fs.writeFileSync(path.join(DOWNLOADS_DIR, 'Presentation.pdf'), pdfBytes);
-
-    console.log('Finished. Closing browser...');
-    await browser.close();
 }
 
-run().catch(console.error);
+run();
