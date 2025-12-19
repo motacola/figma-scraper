@@ -5,35 +5,123 @@
   "scripts": {
     "start": "node scrape.js",
     "dev": "electron .",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
-    "build": "echo \"Build script for CI/CD - use platform-specific builds\" && echo \"✓ Build step completed\"",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:win": "electron-builder --win --publish never",
+    "build:linux": "electron-builder --linux --publish never",
+    "build": "npm run build:mac || npm run build:win || npm run build:linux",
+    "build:all": "npm run build:mac && npm run build:win && npm run build:linux",
+    "build:release": "npm run build:all && node scripts/create-release.js",
     "test": "echo \"Running basic checks...\" && node -c scrape.js && node -c scraper-core.js && node -c main.js && node -c renderer.js && echo \"✓ All files have valid syntax\"",
     "lint": "echo \"Running lint checks...\" && echo \"✓ Linting passed\"",
     "test:integration": "echo \"Running integration tests...\" && echo \"✓ Integration tests passed\"",
-    "deploy": "echo \"Deployment handled by GitHub Actions\" && echo \"✓ Deployment step completed\""
+    "deploy": "echo \"Deployment handled by GitHub Actions\" && echo \"✓ Deployment step completed\"",
+    "package": "npm run build:all",
+    "release": "npm run build:release"
   },
   "build": {
     "appId": "com.figmasnap.app",
     "productName": "FigmaSnap",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
+    "files": [
+      "**/*",
+      "!node_modules/*",
+      "!dist/*",
+      "!release/*",
+      "!.git/*",
+      "!.github/*",
+      "!.vscode/*",
+      "!*.md",
+      "!scripts/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets/"
+      }
+    ],
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "artifactName": "${productName}-${version}-mac.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}-win.${ext}"
     },
     "linux": {
-      "target": "AppImage"
-    }
+      "target": "AppImage",
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "artifactName": "${productName}-${version}-linux.${ext}",
+      "desktop": {
+        "Name": "FigmaSnap",
+        "Comment": "Capture Figma prototypes automatically",
+        "Categories": "Development;Graphics;"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FigmaSnap"
+    },
+    "dmg": {
+      "background": "assets/dmg-background.png",
+      "icon": "assets/icon.icns",
+      "iconSize": 100,
+      "contents": [
+        {
+          "x": 448,
+          "y": 344,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 192,
+          "y": 344,
+          "type": "file"
+        }
+      ],
+      "window": {
+        "width": 660,
+        "height": 500
+      }
+    },
+    "publish": null
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "figma",
+    "prototype",
+    "capture",
+    "automation",
+    "pdf",
+    "design"
+  ],
+  "author": "FigmaSnap Team <support@figmasnap.com>",
   "license": "ISC",
-  "description": "",
+  "description": "Automate Figma prototype capture - Save hours every week with one-click PDF generation",
+  "homepage": "https://github.com/motacola/figma-scraper",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/motacola/figma-scraper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/motacola/figma-scraper/issues"
+  },
   "dependencies": {
     "chalk": "^4.1.2",
     "dotenv": "^17.2.3",
