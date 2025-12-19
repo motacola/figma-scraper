@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { findChrome } = require('./chrome-finder');
 const { validateLicense } = require('./license');
-const { runScrape } = require('./scraper-core');
+const { runScrape, discoverFlows } = require('./scraper-core');
 
 let mainWindow;
 
@@ -57,18 +57,48 @@ ipcMain.on('start-capture', async (event, config) => {
     }
 
     try {
-        await runScrape({
-            ...config,
-            chromePath,
-            onStatus: (status) => {
-                event.reply('status-update', status);
-            }
-        });
-        event.reply('status-update', { type: 'success', message: 'Capture finished!' });
+        const flowNodeIds = config.flowNodeIds || [null]; // Default to one run with current URL
+        
+        for (let i = 0; i < flowNodeIds.length; i++) {
+            const flowId = flowNodeIds[i];
+            const totalFlows = flowNodeIds.length;
+            const flowMsg = totalFlows > 1 ? ` (Flow ${i + 1}/${totalFlows})` : '';
+            
+            event.reply('status-update', { type: 'info', message: `Processing flow${flowMsg}...` });
+            
+            await runScrape({
+                ...config,
+                flowNodeId: flowId,
+                chromePath,
+                onStatus: (status) => {
+                    // Prepend flow info if multiple
+                    if (totalFlows > 1 && status.type === 'progress') {
+                        status.message = `[Flow ${i + 1}/${totalFlows}] ${status.message}`;
+                    }
+                    event.reply('status-update', status);
+                }
+            });
+        }
+        
+        event.reply('status-update', { type: 'success', message: 'All captures finished!' });
     } catch (error) {
         console.error('Scrape error:', error);
         event.reply('status-update', { type: 'error', message: `Error: ${error.message}` });
     }
+});
+
+ipcMain.handle('discover-flows', async (event, config) => {
+    let chromePath = config.browserPath || findChrome();
+    if (!chromePath) throw new Error('Browser not found');
+
+    return await discoverFlows({
+        url: config.url,
+        password: config.password,
+        chromePath,
+        onStatus: (status) => {
+            event.sender.send('status-update', status);
+        }
+    });
 });
 
 ipcMain.handle('select-browser', async () => {
@@ -112,4 +142,8 @@ ipcMain.handle('select-directory', async () => {
 
 ipcMain.handle('check-license', async (event, key) => {
     return validateLicense(key);
+});
+
+ipcMain.handle('get-chrome-path', async () => {
+    return findChrome();
 });

@@ -64,13 +64,14 @@ label {
   color: var(--text-muted);
 }
 
-input {
+input, select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
   box-sizing: border-box;
+  background-color: white;
 }
 
 input:focus {
@@ -164,4 +165,44 @@ hr {
   background: var(--primary);
   width: 0%;
   transition: width 0.3s ease;
+}
+
+/* Flows List */
+.flows-list {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+  background: #fafafa;
+}
+
+.flow-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.flow-item:last-child {
+  border-bottom: none;
+}
+
+.flow-item:hover {
+  background: #f0f7ff;
+}
+
+.flow-item input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+}
+
+.flow-item label {
+  margin: 0;
+  font-weight: 400;
+  color: var(--text);
+  flex: 1;
+  cursor: pointer;
 }

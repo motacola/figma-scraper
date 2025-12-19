@@ -30,11 +30,21 @@
       <div class="form">
         <div class="field">
           <label>Figma Prototype URL</label>
-          <input
-            type="text"
-            id="figma-url"
-            placeholder="https://www.figma.com/proto/..."
-          />
+          <div class="row">
+            <input
+              type="text"
+              id="figma-url"
+              placeholder="https://www.figma.com/proto/..."
+            />
+            <button id="discover-btn">Discover Flows</button>
+          </div>
+        </div>
+
+        <div id="flows-section" class="field hidden">
+          <label>Select Flows to Capture</label>
+          <div id="flows-list" class="flows-list">
+            <!-- Populated by JS -->
+          </div>
         </div>
 
         <div class="field">
@@ -65,6 +75,17 @@
               placeholder="Select folder..."
             />
             <button id="browse-btn">Browse</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Export Preset</label>
+            <select id="export-preset">
+              <option value="stakeholder">Stakeholder Pack (2x + Cover)</option>
+              <option value="dev">Dev Handoff (2x PNGs)</option>
+              <option value="clean">Clean Deck (1x PDF)</option>
+            </select>
           </div>
         </div>
 

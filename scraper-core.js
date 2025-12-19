@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
 /**
  * Simple "Computer Vision" check to see if a screenshot is "blank" (solid color).
@@ -23,14 +23,143 @@ function isBlank(buffer) {
     return isSolid;
 }
 
-async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5000, chromePath, onStatus }) {
+async function discoverFlows({ url, password, chromePath, onStatus }) {
     if (!onStatus) onStatus = () => {};
+    onStatus({ type: 'info', message: 'Discovering flows...' });
+
+    let browser = null;
+    try {
+        browser = await chromium.launch({
+            headless: true, // Discovery can be headless
+            executablePath: chromePath,
+            args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']
+        });
+
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        });
+        const page = await context.newPage();
+
+        // Append hide-ui=0 to ensure flows are in DOM
+        const discoveryUrl = url.includes('?') ? `${url}&hide-ui=0` : `${url}?hide-ui=0`;
+        await page.goto(discoveryUrl, { waitUntil: 'load', timeout: 60000 });
+
+        // Handle password if present
+        try {
+            const passwordInputSelector = 'input[type="password"]';
+            const present = await page.waitForSelector(passwordInputSelector, { timeout: 5000 }).catch(() => null);
+            if (present && password) {
+                await page.fill(passwordInputSelector, password);
+                await page.keyboard.press('Enter');
+                await page.waitForLoadState('networkidle').catch(() => null);
+            }
+        } catch (e) {}
+
+        // Wait for flows to appear in the sidebar
+        const sidebarSelector = '#prototype-sidebar-panel';
+        try {
+            await page.waitForSelector(sidebarSelector, { timeout: 15000 });
+        } catch (e) {
+            // Check if we need to click "Flows" button first (sometimes sidebar is collapsed)
+            const flowsButton = await page.getByRole('button', { name: /flows/i }).first().catch(() => null);
+            if (flowsButton) {
+                await flowsButton.click();
+                await page.waitForSelector(sidebarSelector, { timeout: 10000 });
+            }
+        }
+
+        const flows = await page.evaluate(() => {
+            const rows = Array.from(document.querySelectorAll('[class*="flowRow"]'));
+            return rows.map(row => {
+                const label = row.querySelector('label') || row;
+                return {
+                    name: label.innerText.trim(),
+                    nodeId: row.getAttribute('data-node-id')
+                };
+            }).filter(f => f.nodeId);
+        });
+
+        return flows;
+    } finally {
+        if (browser) await browser.close();
+    }
+}
+
+async function addCoverPage(pdfDoc, title, flowName) {
+    const page = pdfDoc.insertPage(0, [600, 400]);
+    const { width, height } = page.getSize();
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const subFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Background
+    page.drawRectangle({
+        x: 0,
+        y: 0,
+        width,
+        height,
+        color: rgb(0.09, 0.63, 0.98), // Figma Blueish
+    });
+
+    // Title
+    page.drawText('FigmaSnap Capture', {
+        x: 50,
+        y: height - 100,
+        size: 30,
+        font,
+        color: rgb(1, 1, 1),
+    });
+
+    // File Name
+    page.drawText(`File: ${title}`, {
+        x: 50,
+        y: height - 150,
+        size: 18,
+        font: subFont,
+        color: rgb(1, 1, 1),
+    });
+
+    if (flowName) {
+        page.drawText(`Flow: ${flowName}`, {
+            x: 50,
+            y: height - 180,
+            size: 18,
+            font: subFont,
+            color: rgb(1, 1, 1),
+        });
+    }
+
+    // Date
+    page.drawText(`Date: ${new Date().toLocaleDateString()}`, {
+        x: 50,
+        y: 80,
+        size: 12,
+        font: subFont,
+        color: rgb(1, 1, 1),
+    });
+}
+
+async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5000, chromePath, onStatus, flowNodeId, preset = 'stakeholder' }) {
+    if (!onStatus) onStatus = () => {};
+
+    // Preset Config
+    const scaleFactor = preset === 'clean' ? 1 : 2;
+    const isStakeholder = preset === 'stakeholder';
+    const isDev = preset === 'dev';
 
     // Validate URL format
     const figmaRegex = /^https?:\/\/(www\.)?figma\.com\/(proto|file)\/[\w\-]+/;
     if (!url || !figmaRegex.test(url)) {
         onStatus({ type: 'error', message: `Invalid Figma URL format. Please use a valid Figma prototype URL.` });
         throw new Error('Invalid Figma URL format');
+    }
+
+    // If a specific flow is targetted, update the URL
+    let targetUrl = url;
+    if (flowNodeId) {
+        const separator = targetUrl.includes('?') ? '&' : '?';
+        // Remove existing starting-point-node-id if any
+        targetUrl = targetUrl.replace(/([?&])starting-point-node-id=[^&]+/, '');
+        targetUrl += `${separator}starting-point-node-id=${encodeURIComponent(flowNodeId)}`;
     }
 
     onStatus({ type: 'info', message: `Initializing capture...` });
@@ -63,13 +192,13 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
 
         const context = await browser.newContext({
             viewport: { width: 1280, height: 800 },
-            deviceScaleFactor: 2,
+            deviceScaleFactor: scaleFactor,
             userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         });
         const page = await context.newPage();
 
-        onStatus({ type: 'info', message: `Navigating to: ${url}` });
-        await page.goto(url, { waitUntil: 'load', timeout: 0 });
+        onStatus({ type: 'info', message: `Navigating to: ${targetUrl}` });
+        await page.goto(targetUrl, { waitUntil: 'load', timeout: 0 });
         await page.waitForLoadState('networkidle').catch(() => null);
 
         // Auth Logic
@@ -131,7 +260,12 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
                     break;
                 }
             } else {
-                const filename = `slide_${String(slideCount).padStart(3, '0')}.png`;
+                let filename = `slide_${String(slideCount).padStart(3, '0')}.png`;
+                if (isDev) {
+                    // In Dev mode, we might want to include a hint of the flow or just keep it very technical
+                    filename = `figmasnap_dev_${String(slideCount).padStart(3, '0')}.png`;
+                }
+
                 try {
                     fs.writeFileSync(path.join(outputDir, filename), buffer);
                 } catch (writeError) {
@@ -176,6 +310,11 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
         const pdfName = `${safeName}_${timestamp}.pdf`;
         
         if (slideCount > 1) {
+            if (isStakeholder) {
+                onStatus({ type: 'info', message: `Adding Professional Cover Page...` });
+                await addCoverPage(pdfDoc, prototypeName, flowNodeId ? 'Targeted Flow' : 'Full Prototype');
+            }
+
             onStatus({ type: 'info', message: `Finalizing PDF Document...` });
             const pdfBytes = await pdfDoc.save();
             try {
@@ -199,4 +338,4 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
     }
 }
 
-module.exports = { runScrape };
+module.exports = { runScrape, discoverFlows };

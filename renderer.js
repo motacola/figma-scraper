@@ -11,12 +11,16 @@ const figmaPasswordInput = document.getElementById('figma-password');
 const outputPathInput = document.getElementById('output-path');
 const maxSlidesInput = document.getElementById('max-slides');
 const waitMsInput = document.getElementById('wait-ms');
+const exportPresetSelect = document.getElementById('export-preset');
 
 // Buttons
 const validateLicenseBtn = document.getElementById('validate-license-btn');
 const browseBtn = document.getElementById('browse-btn');
 const browseBrowserBtn = document.getElementById('browse-browser-btn');
+const discoverBtn = document.getElementById('discover-btn');
 const startBtn = document.getElementById('start-btn');
+const flowsSection = document.getElementById('flows-section');
+const flowsList = document.getElementById('flows-list');
 
 // Status
 const progressContainer = document.getElementById('progress-container');
@@ -31,6 +35,14 @@ if (savedKey) {
     ipcRenderer.invoke('check-license', savedKey).then(isValid => {
         if (isValid) {
             showMainScreen();
+            // Auto-detect browser path
+            ipcRenderer.invoke('get-chrome-path').then(path => {
+                if (path) {
+                    document.getElementById('browser-path').value = path;
+                } else {
+                    document.getElementById('browser-path').placeholder = 'No browser found - click Browse';
+                }
+            });
         } else {
             localStorage.removeItem('figmasnap_license');
         }
@@ -51,6 +63,12 @@ validateLicenseBtn.onclick = async () => {
     if (isValid) {
         localStorage.setItem('figmasnap_license', key);
         showMainScreen();
+        // Auto-detect browser path for new users
+        ipcRenderer.invoke('get-chrome-path').then(path => {
+            if (path) {
+                document.getElementById('browser-path').value = path;
+            }
+        });
     } else {
         licenseError.classList.remove('hidden');
     }
@@ -70,14 +88,66 @@ browseBrowserBtn.onclick = async () => {
     }
 };
 
+discoverBtn.onclick = async () => {
+    const url = figmaUrlInput.value.trim();
+    if (!url) {
+        alert('Please enter a Figma URL first.');
+        return;
+    }
+
+    discoverBtn.disabled = true;
+    discoverBtn.innerText = 'Searching...';
+    flowsSection.classList.add('hidden');
+    flowsList.innerHTML = '';
+
+    try {
+        const flows = await ipcRenderer.invoke('discover-flows', {
+            url,
+            password: figmaPasswordInput.value,
+            browserPath: document.getElementById('browser-path').value
+        });
+
+        if (flows && flows.length > 0) {
+            flowsSection.classList.remove('hidden');
+            flows.forEach(flow => {
+                const item = document.createElement('div');
+                item.className = 'flow-item';
+                item.innerHTML = `
+                    <input type="checkbox" id="flow-${flow.nodeId}" value="${flow.nodeId}" checked>
+                    <label for="flow-${flow.nodeId}">${flow.name}</label>
+                `;
+                item.onclick = (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        const cb = item.querySelector('input');
+                        cb.checked = !cb.checked;
+                    }
+                };
+                flowsList.appendChild(item);
+            });
+            statusText.innerText = `Found ${flows.length} flows.`;
+        } else {
+            alert('No flows found in this prototype. Proceeding with default capture.');
+        }
+    } catch (err) {
+        alert(`Discovery error: ${err.message}`);
+    } finally {
+        discoverBtn.disabled = false;
+        discoverBtn.innerText = 'Discover Flows';
+    }
+};
+
 startBtn.onclick = () => {
+    const selectedFlows = Array.from(flowsList.querySelectorAll('input:checked')).map(cb => cb.value);
+    
     const config = {
         url: figmaUrlInput.value.trim(),
         password: figmaPasswordInput.value,
         outputDir: outputPathInput.value,
         maxSlides: parseInt(maxSlidesInput.value) || 200,
         waitMs: parseInt(waitMsInput.value) || 5000,
-        browserPath: document.getElementById('browser-path').value
+        browserPath: document.getElementById('browser-path').value,
+        flowNodeIds: selectedFlows.length > 0 ? selectedFlows : [null],
+        preset: exportPresetSelect.value
     };
 
     if (!config.url || !config.outputDir) {
