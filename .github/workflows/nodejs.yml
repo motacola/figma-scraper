@@ -71,14 +71,16 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Create dist directory for GitHub Pages
+      - name: Create build artifact
         run: |
-          mkdir -p dist
-          echo "FigmaSnap CI/CD Deployment" > dist/index.html
-          echo "Build: $(date)" >> dist/index.html
+          mkdir -p build
+          echo "FigmaSnap Build Artifact" > build/info.txt
+          echo "Version: $(node -p "require('./package.json').version")" >> build/info.txt
+          echo "Build Date: $(date)" >> build/info.txt
+          echo "Node Version: $(node --version)" >> build/info.txt
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          name: figmasnap-build
+          path: build/
