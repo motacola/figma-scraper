@@ -8,6 +8,8 @@ FigmaSnap is the fastest way to turn Figma prototypes into professional PDFs and
 
 **Designers & Agencies**
 
+![FigmaSnap Electron App Interface](assets/screenshots/electron-app.png)
+
 - Send review-ready PDFs to clients without giving them Figma login access
 - Create polished design documentation in seconds instead of manual screenshot work
 - Maintain consistent presentation format across all client deliverables
@@ -50,6 +52,7 @@ FigmaSnap is the fastest way to turn Figma prototypes into professional PDFs and
 ## 📋 Table of Contents
 
 - [Features](#features)
+- [Visual Showcase](#visual-showcase)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -70,6 +73,29 @@ FigmaSnap is the fastest way to turn Figma prototypes into professional PDFs and
 - **Cross-platform**: Works on Mac, Windows, and Linux
 - **Redaction Mode**: Hide sensitive layers with [mask] tags
 - **Flow Capture**: Target specific user flows within prototypes
+
+## 👀 Visual Showcase
+
+### Before vs After
+
+![Before and After Comparison](assets/screenshots/before-after.png)
+
+**Manual Process:** 30+ minutes of manual screenshots, cropping, and PDF assembly
+**FigmaSnap:** 2 minutes of automated capture with professional results
+
+### Sample Output
+
+📄 **[Download Sample PDF](assets/sample-output.pdf)** - See exactly what FigmaSnap produces
+
+![Sample PDF Output](assets/screenshots/sample-pdf.png)
+
+*Professional PDF with automatic frame naming and consistent formatting*
+
+### How It Works
+
+1. **Input**: Paste your Figma prototype URL
+2. **Capture**: FigmaSnap automatically walks through all screens
+3. **Output**: Get a complete PDF with all frames and interactions
 
 ## 🏃 5-Minute Quickstart
 
