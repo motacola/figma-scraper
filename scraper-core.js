@@ -2,6 +2,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
+const FlowManager = require('./flow-manager');
 
 /**
  * Simple "Computer Vision" check to see if a screenshot is "blank" (solid color).
@@ -137,6 +138,186 @@ async function discoverFlows({ url, password, chromePath, onStatus }) {
 }
 
 async function addCoverPage(pdfDoc, title, flowName) {
+
+    /**
+     * Run a guided flow capture with predefined navigation steps
+     */
+    async function runGuidedFlow({ url, password, outputDir, chromePath, onStatus, flowConfig, preset = 'stakeholder' }) {
+        if (!onStatus) onStatus = () => { };
+
+        const flowManager = new FlowManager();
+        const scaleFactor = preset === 'clean' ? 1 : 2;
+        const isStakeholder = preset === 'stakeholder';
+
+        // Validate URL format
+        const figmaRegex = /^https?:\/\/(www\.)?figma\.com\/(proto|file|design)\/[\w\-]+/;
+        if (!url || !figmaRegex.test(url)) {
+            onStatus({ type: 'error', message: `Invalid Figma URL format. Please use a valid Figma prototype URL.` });
+            throw new Error('Invalid Figma URL format');
+        }
+
+        try {
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+        } catch (mkdirError) {
+            onStatus({ type: 'error', message: `Failed to create output directory: ${mkdirError.message}` });
+            throw mkdirError;
+        }
+
+        const pdfDoc = await PDFDocument.create();
+
+        let browser = null;
+        try {
+            browser = await chromium.launch({
+                headless: false,
+                executablePath: chromePath,
+                ignoreDefaultArgs: ['--enable-automation'],
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--start-maximized',
+                    '--disable-infobars',
+                    '--disable-blink-features=AutomationControlled'
+                ]
+            });
+
+            const context = await browser.newContext({
+                viewport: { width: 1280, height: 800 },
+                deviceScaleFactor: scaleFactor,
+                userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            });
+            const page = await context.newPage();
+
+            onStatus({ type: 'info', message: `Navigating to: ${url}` });
+            await page.goto(url, { waitUntil: 'load', timeout: 0 });
+            await page.waitForLoadState('networkidle').catch(() => null);
+
+            // Auth Logic
+            onStatus({ type: 'info', message: `Checking for security prompts...` });
+            try {
+                const passwordInputSelector = 'input[type="password"]';
+                const present = await page.waitForSelector(passwordInputSelector, { timeout: 8000 }).catch(() => null);
+                if (present && password) {
+                    onStatus({ type: 'info', message: `Entering password...` });
+                    await page.fill(passwordInputSelector, password);
+                    await page.keyboard.press('Enter');
+                    await page.waitForLoadState('networkidle').catch(() => null);
+                    await page.waitForTimeout(5000);
+                }
+            } catch (authError) {
+                console.error('Auth error:', authError);
+            }
+
+            onStatus({ type: 'info', message: `Waiting for WebGL Canvas...` });
+            const canvasSelector = 'canvas';
+            try {
+                await page.waitForSelector(canvasSelector, { state: 'visible', timeout: 60000 });
+                let attempts = 0;
+                while (attempts < 5) {
+                    const checkBuf = await page.screenshot();
+                    if (!isBlank(checkBuf)) break;
+                    onStatus({ type: 'info', message: `Content not yet visible... (${attempts + 1}/5)` });
+                    await page.waitForTimeout(3000);
+                    attempts++;
+                }
+                await page.waitForTimeout(5000);
+            } catch (canvasError) {
+                onStatus({ type: 'warning', message: `Vision sensor timed out. Proceeding...` });
+            }
+
+            // Focus & Prepare
+            await page.bringToFront();
+            await page.mouse.click(640, 400);
+
+            // Execute the guided flow
+            await flowManager.executeGuidedFlow(flowConfig, page, onStatus);
+
+            // Capture the final state
+            let previousBuffer = null;
+            let consecutiveDuplicates = 0;
+            let slideCount = 1;
+
+            // Capture the result of the guided flow
+            const finalBuffer = await waitForVisualStability(page, {
+                minWaitMs: 2000,
+                maxWaitMs: 5000,
+                stabilityChecks: 3
+            });
+
+            const frameInfo = await getFrameInfo(page);
+
+            // Save the final capture
+            let filename = `guided_flow_final_${frameInfo.safeName}.png`;
+            try {
+                fs.writeFileSync(path.join(outputDir, filename), finalBuffer);
+            } catch (writeError) {
+                onStatus({ type: 'error', message: `Failed to save final capture: ${writeError.message}` });
+                throw writeError;
+            }
+
+            // Add to PDF
+            try {
+                const image = await pdfDoc.embedPng(finalBuffer);
+                const pdfPage = pdfDoc.addPage([image.width, image.height]);
+                pdfPage.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+
+                if (isStakeholder) {
+                    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+                    pdfPage.drawText(`Guided Flow: ${flowConfig.name || 'Unnamed Flow'}`, {
+                        x: 20,
+                        y: 20,
+                        size: 10,
+                        font: font,
+                        color: rgb(0.5, 0.5, 0.5)
+                    });
+                }
+            } catch (embedError) {
+                onStatus({ type: 'warning', message: `Could not embed final capture into PDF: ${embedError.message}` });
+            }
+
+            // Generate final PDF
+            let prototypeName = 'Guided_Flow_Capture';
+            try {
+                const title = await page.title();
+                prototypeName = title.split(' – ')[0].split(' - ')[0].replace(/[<>:"/\\|?*]/g, '_').trim() || 'Guided_Flow_Capture';
+            } catch (titleError) {
+                console.error('Title parsing error:', titleError);
+            }
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const safeName = prototypeName.substring(0, 50);
+            const pdfName = `${safeName}_guided_flow_${timestamp}.pdf`;
+
+            if (slideCount > 0) {
+                if (isStakeholder) {
+                    onStatus({ type: 'info', message: `Adding Professional Cover Page...` });
+                    await addCoverPage(pdfDoc, prototypeName, flowConfig.name || 'Guided Flow');
+                }
+
+                onStatus({ type: 'info', message: `Finalizing PDF Document...` });
+                const pdfBytes = await pdfDoc.save();
+                try {
+                    fs.writeFileSync(path.join(outputDir, pdfName), pdfBytes);
+                } catch (writeError) {
+                    onStatus({ type: 'error', message: `Failed to save PDF: ${writeError.message}` });
+                    throw writeError;
+                }
+                onStatus({ type: 'success', message: `Guided flow capture completed! Saved ${slideCount} slides.` });
+            } else {
+                onStatus({ type: 'error', message: `No captures were made during guided flow.` });
+            }
+
+        } catch (mainError) {
+            onStatus({ type: 'error', message: `Guided flow error: ${mainError.message}` });
+            throw mainError;
+        } finally {
+            if (browser) {
+                await browser.close().catch(() => null);
+            }
+        }
+    }
+
     const page = pdfDoc.insertPage(0, [600, 400]);
     const { width, height } = page.getSize();
     const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -459,4 +640,4 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
     }
 }
 
-module.exports = { runScrape, discoverFlows };
+module.exports = { runScrape, discoverFlows, runGuidedFlow, FlowManager };
