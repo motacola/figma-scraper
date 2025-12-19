@@ -4,6 +4,7 @@ const path = require('path');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const FlowManager = require('./flow-manager');
 const ExportManager = require('./export-manager');
+const logger = require('./logger');
 
 /**
  * Simple "Computer Vision" check to see if a screenshot is "blank" (solid color).
@@ -636,4 +637,4 @@ async function runScrape({ url, password, outputDir, maxSlides = 200, waitMs = 5
     }
 }
 
-module.exports = { runScrape, discoverFlows, runGuidedFlow, FlowManager, ExportManager };
+module.exports = { runScrape, discoverFlows, runGuidedFlow, FlowManager, ExportManager, logger };

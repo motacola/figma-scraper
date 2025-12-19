@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { findChrome } = require('./chrome-finder');
 const { validateLicense } = require('./license');
-const { runScrape, discoverFlows, runGuidedFlow, ExportManager } = require('./scraper-core');
+const { runScrape, discoverFlows, runGuidedFlow, ExportManager, logger } = require('./scraper-core');
 
 let mainWindow;
 
@@ -239,6 +239,58 @@ ipcMain.handle('delete-flow', async (event, flowName) => {
         const deleted = flowManager.deleteFlow(flowName);
         return { success: deleted };
     } catch (error) {
+        logger.error('Failed to delete flow', { flowName, error: error.message });
+        return { success: false, error: error.message };
+    }
+});
+
+// Status and Logging IPC Handlers
+ipcMain.handle('get-logs', async (event, limit = 100) => {
+    try {
+        const logs = logger.getRecentLogs(limit);
+        return { success: true, logs };
+    } catch (error) {
+        logger.error('Failed to get logs', { error: error.message });
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('clear-logs', async () => {
+    try {
+        logger.clearLogs();
+        return { success: true, message: 'Logs cleared successfully' };
+    } catch (error) {
+        logger.error('Failed to clear logs', { error: error.message });
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('set-log-level', async (event, logLevel) => {
+    try {
+        logger.logLevel = logLevel;
+        logger.info('Log level changed', { newLevel: logLevel });
+        return { success: true, message: `Log level set to ${logLevel}` };
+    } catch (error) {
+        logger.error('Failed to set log level', { logLevel, error: error.message });
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('get-system-info', async () => {
+    try {
+        const systemInfo = {
+            platform: process.platform,
+            arch: process.arch,
+            nodeVersion: process.version,
+            memoryUsage: process.memoryUsage(),
+            uptime: process.uptime(),
+            cwd: process.cwd()
+        };
+
+        logger.debug('System info requested', systemInfo);
+        return { success: true, systemInfo };
+    } catch (error) {
+        logger.error('Failed to get system info', { error: error.message });
         return { success: false, error: error.message };
     }
 });
