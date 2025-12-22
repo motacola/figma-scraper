@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "FigmaSnap Extension",
+  "version": "1.0.0",
+  "description": "Port of FigmaSnap: Automate Figma prototype captures into PDFs directly from Chrome.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "activeTab",
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.figma.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/icon.png",
+      "48": "assets/icon.png",
+      "128": "assets/icon.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.figma.com/proto/*", "https://www.figma.com/file/*", "https://www.figma.com/design/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icon.png",
+    "48": "assets/icon.png",
+    "128": "assets/icon.png"
+  }
+}

@@ -18,9 +18,14 @@ class Logger {
     }
 
     ensureLogDirectory() {
-        const logDir = path.dirname(this.logFile);
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
+        if (!this.logToFile) return;
+        try {
+            const logDir = path.dirname(this.logFile);
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+        } catch (error) {
+            console.error('Failed to create log directory:', error.message);
         }
     }
 
@@ -54,6 +59,7 @@ class Logger {
 
         // File output
         if (this.logToFile) {
+            this.rotateLogsIfNeeded();
             this.logToFileEntry(logEntry);
         }
     }
@@ -193,7 +199,6 @@ class Logger {
     }
 }
 
-// Singleton logger instance
-const logger = new Logger();
-
-module.exports = logger;
+// Export both the class and a singleton instance
+module.exports = Logger;
+module.exports.logger = new Logger();

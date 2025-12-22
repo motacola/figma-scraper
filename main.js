@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { findChrome } = require('./chrome-finder');
-const { validateLicense } = require('./license');
+const { validateLicense } = require('./license-validator.js');
 const { runScrape, discoverFlows, runGuidedFlow, ExportManager, logger } = require('./scraper-core');
 
 let mainWindow;

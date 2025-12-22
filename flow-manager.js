@@ -202,14 +202,19 @@ class FlowManager {
      * Import flows from external source
      */
     importFlows(flowsData) {
+        if (!Array.isArray(flowsData)) return 0;
         let importedCount = 0;
 
         for (const flow of flowsData) {
             try {
+                if (!flow || !flow.name) {
+                    console.warn('Skipping invalid flow during import:', flow);
+                    continue;
+                }
                 this.saveFlow(flow.name, flow);
                 importedCount++;
             } catch (error) {
-                console.error(`Failed to import flow ${flow.name}:`, error.message);
+                console.error(`Failed to import flow ${flow ? flow.name : 'unknown'}:`, error.message);
             }
         }
 

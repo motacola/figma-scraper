@@ -56,8 +56,9 @@ FigmaSnap is the fastest way to turn Figma prototypes into professional PDFs and
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Usage](#usage)
-- [CLI Usage](#cli-usage)
-- [Electron App Usage](#electron-app-usage)
+  - [Chrome Extension](#chrome-extension-new)
+  - [CLI Usage](#cli-usage)
+  - [Electron App Usage](#electron-app-usage)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -153,6 +154,27 @@ npm install electron --save-dev
 ```
 
 ## 📖 Usage
+
+### Chrome Extension (NEW!) 🎉
+
+The easiest way to use FigmaSnap - no installation required!
+
+**Installation:**
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer mode** (toggle in top right)
+3. Click **Load unpacked**
+4. Select the `extension` folder from this repository
+
+**Usage:**
+1. Navigate to any Figma prototype
+2. Click the FigmaSnap extension icon
+3. Enter license key: `FSNAP-TEST-KEY-2025`
+4. Click **Discover** to find flows (optional)
+5. Click **Start Capture** - PDF downloads automatically!
+
+📖 **[Full Extension Documentation](extension/README.md)**
+
+---
 
 ### CLI Usage
 

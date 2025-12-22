@@ -11,7 +11,9 @@
     "build": "npm run build:mac || npm run build:win || npm run build:linux",
     "build:all": "npm run build:mac && npm run build:win && npm run build:linux",
     "build:release": "npm run build:all && node scripts/create-release.js",
-    "test": "echo \"Running basic checks...\" && node -c scrape.js && node -c scraper-core.js && node -c main.js && node -c renderer.js && echo \"✓ All files have valid syntax\"",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:syntax": "echo \"Running basic checks...\" && node -c scrape.js && node -c scraper-core.js && node -c main.js && node -c renderer.js && echo \"✓ All files have valid syntax\"",
     "lint": "echo \"Running lint checks...\" && echo \"✓ Linting passed\"",
     "test:integration": "echo \"Running integration tests...\" && echo \"✓ Integration tests passed\"",
     "deploy": "echo \"Deployment handled by GitHub Actions\" && echo \"✓ Deployment step completed\"",
@@ -132,7 +134,9 @@
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
     "electron": "^39.2.7",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "jest": "^30.2.0"
   }
 }
